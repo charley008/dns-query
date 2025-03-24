@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DNS 查询工具</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .controls { margin: 20px 0; display: grid; grid-gap: 10px; }
+        #dnsServers { height: 150px; margin: 10px 0; }
+        .server-management { margin: 10px 0; }
+        .result-item { padding: 10px; margin: 5px 0; border: 1px solid #ddd; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>DNS 查询工具</h1>
+        
+        <div class="controls">
+            <input type="text" id="domain" value="www.qq.com">
+            
+            <div class="server-management">
+                <input type="text" id="newDNS" placeholder="输入新DNS服务器IP">
+                <button onclick="addDNS()">添加</button>
+                <button onclick="removeDNS()">删除选中</button>
+            </div>
+            
+            <select id="dnsServers" multiple>
+                <!-- 选项由JavaScript动态加载 -->
+            </select>
+            
+            <select id="queryType">
+                <option value="4">IPv4 (A)</option>
+                <option value="6">IPv6 (AAAA)</option>
+            </select>
+            <button onclick="runTest()">开始测试</button>
+        </div>
+
+        <div id="results"></div>
+    </div>
+
+    <script>
+        // 动态加载DNS服务器列表
+        async function loadDNSList() {
+            const response = await fetch('/get-dns-list');
+            const servers = await response.json();
+            const select = document.getElementById('dnsServers');
+            
+            select.innerHTML = servers.map(s => 
+                `<option value="${s}">${s}</option>`
+            ).join('');
+        }
+
+        async function runTest() {
+            // 如果没有选择服务器，默认选择所有
+            const serverSelect = document.getElementById('dnsServers');
+            if (serverSelect.selectedOptions.length === 0) {
+                for (let i = 0; i < serverSelect.options.length; i++) {
+                    serverSelect.options[i].selected = true;
+                }
+            }
+
+            const domain = document.getElementById('domain').value;
+            const servers = Array.from(document.getElementById('dnsServers').selectedOptions)
+                                .map(opt => opt.value);
+            const queryType = document.getElementById('queryType').value;
+
+            const response = await fetch('/dns-check', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    domain: domain,
+                    dns_servers: servers,
+                    query_type: queryType
+                })
+            });
+
+            const results = await response.json();
+            displayResults(results);
+        }
+
+        function displayResults(results) {
+            const container = document.getElementById('results');
+            container.innerHTML = results.map(r => `
+                <div class="result-item">
+                    ${r.Error ? 
+                        `<div style="color: red">${r.server} 错误: ${r.error}</div>` :
+                        `<div>
+                            <strong>${r.server}</strong><br>
+                            查询时间: ${r.querytime}<br>
+                            IP地址: ${r.ip.includes(':') ? `[${r.ip}]` : r.ip}<br>
+                            TCPing延迟: ${r.tcping || 'N/A'}
+                        </div>`
+                    }
+                </div>
+            `).join('');
+        }
+
+        // DNS服务器管理功能
+        async function addDNS() {
+            const newIP = document.getElementById('newDNS').value;
+            await fetch(`/add-dns?server=${encodeURIComponent(newIP)}`);
+            loadDNSList();
+        }
+
+        async function removeDNS() {
+            const selected = Array.from(document.getElementById('dnsServers').selectedOptions)
+                .map(opt => opt.value);
+                
+            for(const ip of selected) {
+                await fetch(`/remove-dns?server=${encodeURIComponent(ip)}`);
+            }
+            loadDNSList();
+        }
+
+        // 初始化加载列表
+        document.addEventListener('DOMContentLoaded', loadDNSList);
+    </script>
+</body>
+</html>
